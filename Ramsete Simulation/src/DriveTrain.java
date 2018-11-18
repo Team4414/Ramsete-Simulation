@@ -1,3 +1,5 @@
+import java.util.Random;
+
 public class DriveTrain {
 
     public DriveTrainGearbox left;
@@ -12,6 +14,7 @@ public class DriveTrain {
     double angle_ = 0;
     double anglev_;
 
+    
     public DriveTrain(DriveTrainGearbox left, DriveTrainGearbox right,double kWheelBase, double kDt) {
         this.left = left;
         this.right = right;
@@ -21,10 +24,9 @@ public class DriveTrain {
 
 
     public void calculate() {
-
         //Estimates heading... should be recorded for real robot
         anglev_ = (1/kWheelBase) * (right.velocity_ - left.velocity_);
-        angle_ += anglev_ *kDt;
+        angle_ += (anglev_ *kDt) ;
 
         // the pos is the average of the 2 sides
         double d_pos_ =( left.velocity_ *kDt + right.velocity_ *kDt ) /2;

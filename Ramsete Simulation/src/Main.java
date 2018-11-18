@@ -1,25 +1,34 @@
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Random;
 
 import jaci.pathfinder.Pathfinder;
 import jaci.pathfinder.Trajectory;
 
 public class Main {
 
+	static double kDt;
+	
 	public static void main(String[] args) {
 
-		double kDt = 0.05;
+		 kDt = 0.005;
 		// increment for simulation
 		int seg = 0;
 
 		// Drivetrain object used for simulation
-		DriveTrain drive = new DriveTrain(new DriveTrainGearbox(0.0, 0.0, kDt), new DriveTrainGearbox(0.0, 0.0, kDt),
-				.066, kDt);
-
+		//DriveTrain drive = new DriveTrain(new DriveTrainGearbox(0.0, 0.0, kDt), new DriveTrainGearbox(0.0, 0.0, kDt),
+//		.76, kDt);
+		
+		
 		// Path for simulation
 		Trajectory path = new Path().getTrajectory();
+		Trajectory path1 = Pathfinder.readFromCSV(new File("csv/Unnamed_right.csv"));
 
+
+		SimpleDrive drive = new SimpleDrive(0, .5, Pathfinder.d2r(0), .76, kDt);
+		
+		
 		// data to log
 		ArrayList<Object> type = new ArrayList<>();
 		ArrayList<Object> x = new ArrayList<>();
@@ -40,22 +49,32 @@ public class Main {
 		 * Method 2 is so much easier... but for sake of example I did what the white
 		 * paper said
 		 */
-
 		double last_gAngle = 0;
 		double gxlast = 0;
 		double gylast = 0;
 		double gxdlast = 0;
 		double gydlast = 0;
 
+		Double initMod = (double) Math.round((drive.heading - (path.get(0).heading+ Math.PI)) / (2*Math.PI))*2*Math.PI;
+		System.out.println(drive.heading);
+		System.out.println(path.get(0).heading);
+		System.out.println(initMod);
+		
 		while (seg <= path.length() - 1) {
 
+			if( (path.get(seg).heading + initMod + Math.PI) - last_gAngle >= Math.PI) {
+				initMod -= (path.get(seg).heading + initMod + Math.PI) - last_gAngle;
+			}
+			
+			double gAngle = (path.get(seg).heading) + initMod + Math.PI;
 			// This is the path vel and can be used for vd
-			double gVel = path.get(seg).velocity;
+			double gVel = -path.get(seg).velocity;
 			
 			
-			// This is the alternative way to calculate gAngleDot or wd
-			// double gAngleDot = gAngle - last_gAngle;
-			// last_gAngle = gAngle;
+			
+			
+			 double gAngleDot = (gAngle - last_gAngle)/ kDt;
+			 last_gAngle = gAngle;
 			
 			//ez stuff
 			double gx = path.get(seg).x;
@@ -69,28 +88,30 @@ public class Main {
 			gydlast = gYDot;
 			gxdlast = gXDot;
 			
+			
 			// this is a STUPID way to calculate gAngle JUST CALL PATH.GET(SEG).HEADING... but for sake of... u get it
-			double gAngle = Pathfinder.d2r(Pathfinder.boundHalfDegrees(Pathfinder.r2d(Math.atan2(gYDot, gXDot))));
 			
 			//robot localization is needed for this part and gyro can be used for angle
-			double angle = Pathfinder.d2r(Pathfinder.boundHalfDegrees(Pathfinder.r2d(drive.angle_)));
-			double rx = drive.posx_;
-			double ry = drive.posy_;
-			
+			double angle = drive.heading;
+			double rx = drive.x;
+			double ry = drive.y;
+
 			/*
 			 *  These values tune your system
 			 *   b is like P in a PID loop and creates a more responsive system--- b > 0
 			 *   zeta is like D in a PID loop and will dampen your system--- Z = (0,1)
 			 */
-			double kzeta = 0.0;
-			double kb = 20.0;
+			double kzeta =.5;
+			double kb = .7;
 
 			/*
 			 * This is the pointless code that is used to calculate your gVel and gAngleDot... just use jaci in the future 
 			 */
-			double vd = Math.sqrt(Math.pow(gXDot, 2) + Math.pow(gYDot, 2));
-			double wd = (gYDDot * gXDot - gXDDot * gYDot) / (Math.pow(gXDot, 2) + Math.pow(gYDot, 2));
 			
+	
+			double vd = gVel;//Math.sqrt(Math.pow(gXDot, 2) + Math.pow(gYDot, 2)) ;
+			double wd = gAngleDot;//(gYDDot * gXDot - gXDDot * gYDot) / (Math.pow(gXDot, 2) + Math.pow(gYDot, 2));
+			double eAngle = gAngle - angle;
 			
 			// This is the constant function... read the paper for more info
 			double k1 = 2.0 * kzeta * Math.sqrt(Math.pow(wd, 2.0) + kb * Math.pow(vd, 2.0));
@@ -100,39 +121,45 @@ public class Main {
 			 * Here she is! Equation 5.12. if you notice while reading the white paper equation 5.12 is wrong... it improperly implements linear projection
 			 * the correct implementation is (Math.cos(angle) * (gy - ry) - Math.sin(angle) * (gx - rx)) in the ramw		
 			 */
-			double ramv = vd * Math.cos(gAngle - angle)
-					+ k1 * (Math.cos(angle) * (gx - rx) + Math.sin(angle) * (gy - ry));
-			double ramw = wd + kb * vd * (Math.sin(gAngle - angle) / (gAngle - angle))
-					* (Math.cos(angle) * (gy - ry) - Math.sin(angle) * (gx - rx)) + k1 * (gAngle - angle);
-
+			double angleError = (gAngle - angle) ;
+			eAngle = angleError;
+			System.out.println(eAngle);
+			double ramv = vd * Math.cos(eAngle) + k1 * (Math.cos(angle) * (gx - rx) + Math.sin(angle) * (gy - ry));
+			double ramw = wd + kb * vd * (Math.sin(eAngle) / (eAngle)) * (Math.cos(angle) * (gy - ry) - Math.sin(angle) * (gx - rx)) + k1 * (eAngle);
+		
+			if (Math.abs(ramw) > 100) {
+				ramw = 0;
+			}
+			drive.calculate(ramv, ramw);
+			
+			
 			// good ol differential kinematic  
-			double velr = ramv + ramw * drive.kWheelBase / 2;
-			double vell = ramv - ramw * drive.kWheelBase / 2;
-
+			double velr = ramv + ramw * drive.wheelbase / 2;
+			double vell = ramv - ramw * drive.wheelbase / 2;
 			// Calculates new pos and vel
 			// the  * 10.0 / 3.8 is a feed forward term and converts vel to voltage 
-			drive.right.calculate(Math.min(10.0, Math.max(-10.0, velr * 10.0 / 3.8)));
-			drive.left.calculate(Math.min(10.0, Math.max(-10.0, vell * 10.0 / 3.8)));
+			//drive.right.calculate(Math.min(10.0, Math.max(-10.0, velr * 10.0 / 3.8)));
+			//drive.left.calculate(Math.min(10.0, Math.max(-10.0, vell * 10.0 / 3.8)));
 
 			// calculates pos and vel of whole model
-			drive.calculate();
+			//drive.calculate();
 
 			// log all the things
 			type.add("path");
 			x.add(path.get(seg).x);
 			y.add(path.get(seg).y);
-			v.add(ramv);
+			v.add(gVel);
 			t.add(seg * kDt);
-			a.add(Pathfinder.boundHalfDegrees(Pathfinder.r2d(path.get(seg).heading)));
+			a.add(path.get(seg).heading+initMod+ Math.PI);
 			p.add(path.get(seg).position);
 
 			type.add("robot");
-			x.add(drive.getPosx_());
-			y.add(drive.getPosy_());
-			v.add(drive.vel_);
+			x.add(drive.x);
+			y.add(drive.y);
+			v.add(0);
 			t.add(seg * kDt);
-			a.add(Pathfinder.boundHalfDegrees(Pathfinder.r2d(drive.angle_)));
-			p.add(drive.getPos_());
+			a.add(drive.heading);
+			p.add(0);
 
 			seg++;
 		}
